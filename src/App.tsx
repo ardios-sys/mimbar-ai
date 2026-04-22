@@ -47,8 +47,8 @@ if (typeof window !== 'undefined') {
   (window as any).html2canvas = html2canvas;
 }
 
-// Initialize Gemini AI
-const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+// Initialize Gemini AI helper
+const getGenAI = (key: string) => new GoogleGenAI({ apiKey: key });
 
 type SermonType = 'Khutbah Jumat' | 'Ceramah' | 'Takziah' | 'Kultum' | 'Khutbah Nikah' | 'Khutbah Hari Raya';
 type HariRayaType = 'Idul Fitri' | 'Idul Adha';
@@ -81,6 +81,9 @@ export default function App() {
   const [savedSermons, setSavedSermons] = useState<SavedSermon[]>([]);
   const [currentView, setCurrentView] = useState<'home' | 'library'>('home');
   const [viewingSavedSermon, setViewingSavedSermon] = useState<SavedSermon | null>(null);
+  const [userApiKey, setUserApiKey] = useState('');
+  const [isApiKeySaved, setIsApiKeySaved] = useState(false);
+  const [apiKeyError, setApiKeyError] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const pdfPreviewRef = useRef<HTMLDivElement>(null);
 
@@ -95,7 +98,28 @@ export default function App() {
         console.error("Failed to parse saved sermons", e);
       }
     }
+
+    const savedKey = localStorage.getItem('GEMINI_API_KEY');
+    if (savedKey) {
+      setUserApiKey(savedKey);
+      setIsApiKeySaved(true);
+    }
   }, []);
+
+  const saveApiKey = () => {
+    if (!userApiKey.trim()) {
+      setApiKeyError('API Key wajib diisi');
+      return;
+    }
+    if (userApiKey.length < 20) {
+      setApiKeyError('API Key minimal 20 karakter');
+      return;
+    }
+    localStorage.setItem('GEMINI_API_KEY', userApiKey);
+    setIsApiKeySaved(true);
+    setApiKeyError('');
+    alert("API Key berhasil disimpan!");
+  };
 
   const saveSermon = () => {
     if (!sermonResult || !selectedTitle) return;
@@ -143,6 +167,10 @@ export default function App() {
   const [tone, setTone] = useState<Tone>('Serius');
 
   const generateTitles = async () => {
+    if (!userApiKey || !isApiKeySaved) {
+      setApiKeyError('API Key wajib diisi dan disimpan sebelum memulai');
+      return;
+    }
     if (!topic) return;
     setIsGenerating(true);
     setTitles([]);
@@ -150,6 +178,7 @@ export default function App() {
     setSermonResult(null);
     
     try {
+      const genAI = getGenAI(userApiKey);
       const model = "gemini-3-flash-preview";
       const actualType = sType === 'Khutbah Hari Raya' ? `Khutbah Hari Raya ${hariRayaType}` : sType;
       const prompt = `Berikan 10 pilihan judul yang menarik, kreatif, dan relevan untuk ${actualType} dengan tema "${topic}". 
@@ -176,9 +205,14 @@ export default function App() {
   };
 
   const generateFullSermon = async (title: string) => {
+    if (!userApiKey || !isApiKeySaved) {
+      setApiKeyError('API Key wajib diisi dan disimpan sebelum memulai');
+      return;
+    }
     setSelectedTitle(title);
     setIsGenerating(true);
     try {
+      const genAI = getGenAI(userApiKey);
       const model = "gemini-3-flash-preview";
       const actualType = sType === 'Khutbah Hari Raya' ? `Khutbah Hari Raya ${hariRayaType}` : sType;
       
@@ -473,6 +507,37 @@ export default function App() {
                     <h2 className="text-lg font-bold">Zalemika Mimbar AI</h2>
                   </div>
 
+                  <div className="space-y-3 bg-emerald-50/50 p-4 rounded-2xl border border-emerald-100">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-[#059669]">Kunci API Gemini</label>
+                      {isApiKeySaved && (
+                        <span className="text-[9px] font-bold text-emerald-600 flex items-center gap-1">
+                          <CheckCircle size={10} /> API Key aktif
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <input 
+                        type="password"
+                        value={userApiKey}
+                        onChange={(e) => {
+                          setUserApiKey(e.target.value);
+                          setIsApiKeySaved(false);
+                          setApiKeyError('');
+                        }}
+                        placeholder="Masukkan API Key Gemini..."
+                        className="flex-1 p-3 bg-white border border-emerald-100 rounded-xl outline-none focus:ring-2 focus:ring-[#059669] transition-all text-xs"
+                      />
+                      <button 
+                        onClick={saveApiKey}
+                        className="px-4 py-2 bg-[#059669] text-white text-[10px] font-bold rounded-xl active:scale-95 transition-all shadow-sm"
+                      >
+                        Simpan
+                      </button>
+                    </div>
+                    {apiKeyError && <p className="text-[9px] text-red-500 font-bold">{apiKeyError}</p>}
+                  </div>
+
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Tema Utama</label>
                     <input 
@@ -552,7 +617,7 @@ export default function App() {
 
                   <button 
                     onClick={generateTitles}
-                    disabled={isGenerating || !topic}
+                    disabled={isGenerating || !topic || !isApiKeySaved}
                     className="w-full py-4 bg-[#059669] text-white font-bold rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-100 active:scale-95 transition-all disabled:opacity-50"
                   >
                     {isGenerating ? (
@@ -587,7 +652,7 @@ export default function App() {
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0, transition: { delay: i * 0.05 } }}
                       onClick={() => generateFullSermon(title)}
-                      disabled={isGenerating}
+                      disabled={isGenerating || !isApiKeySaved}
                       className="w-full p-4 bg-white border border-gray-100 rounded-2xl flex items-center justify-between text-left shadow-sm hover:border-[#059669] hover:bg-emerald-50 transition-all active:scale-[0.98]"
                     >
                       <span className="text-sm font-semibold text-gray-700 pr-4">{title}</span>
